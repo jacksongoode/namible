@@ -7,10 +7,6 @@
         {
           "name": "Start Namible",
           "action": "sh /mnt/us/apps/namible/start.sh"
-        },
-        {
-          "name": "Stop Namible",
-          "action": "sh /mnt/us/apps/namible/stop.sh"
         }
       ]
     }

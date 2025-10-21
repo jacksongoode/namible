@@ -5,13 +5,19 @@ import subprocess
 import os
 import json
 import sys
+import logging
 from PIL import Image, ImageFilter
 import numpy as np
-
 
 BLUR_WIDTH = 300
 BLUR_RADIUS = 40.0
 BAYER_MATRIX = np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]])
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
 
 
 def create_progressive_blur(image, blur_width, max_radius):
@@ -60,9 +66,9 @@ def get_frame(video_id, output_filename="photo.png"):
     """Captures and styles a frame from a YouTube live stream."""
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
     try:
-        print("--- Python Script Start ---")
+        logging.info("Starting frame capture process...")
 
-        print("Step 1: Running yt-dlp...")
+        logging.info("Step 1: Running yt-dlp to get stream URL.")
         yt_dlp_command = [
             "./yt-dlp",
             "--no-cache-dir",
@@ -70,18 +76,17 @@ def get_frame(video_id, output_filename="photo.png"):
             "-g",
             youtube_url,
         ]
-        # A 30-second timeout is used to prevent the process from hanging indefinitely.
         result = subprocess.run(
             yt_dlp_command, check=True, capture_output=True, text=True, timeout=30
         )
         stream_url = result.stdout.strip().split("\n")[0]
-        print("yt-dlp finished successfully.")
+        logging.info("yt-dlp finished successfully.")
 
         if not stream_url.startswith("http"):
-            print(f"Error: yt-dlp did not return a valid URL. Output was: {stream_url}")
+            logging.error(f"yt-dlp did not return a valid URL. Output: {stream_url}")
             return False
 
-        print("Step 2: Running ffmpeg...")
+        logging.info("Step 2: Running ffmpeg to capture a frame.")
         temp_filename = "processed_" + output_filename
         ffmpeg_command = [
             "./ffmpeg",
@@ -89,62 +94,60 @@ def get_frame(video_id, output_filename="photo.png"):
             stream_url,
             "-vframes",
             "1",
-            # The video filter rotates, scales, and crops the frame to the target dimensions.
-            # Grayscale conversion and dithering are handled by the Pillow library later.
             "-vf",
             "transpose=2,scale=1236:1648:force_original_aspect_ratio=increase,crop=1236:1648",
             "-y",
             temp_filename,
         ]
-        # A 30-second timeout is used to prevent the process from hanging indefinitely.
         subprocess.run(ffmpeg_command, check=True, capture_output=True, timeout=30)
-        print("ffmpeg finished successfully.")
+        logging.info("ffmpeg finished successfully.")
 
-        print("Step 3: Applying blur and dither...")
+        logging.info("Step 3: Applying blur and dither.")
         with Image.open(temp_filename) as img:
             img_rgb = img.convert("RGB")
             blurred_img = create_progressive_blur(img_rgb, BLUR_WIDTH, BLUR_RADIUS)
             img_gray = blurred_img.convert("L")
-            # Dithering is temporarily disabled. Saving blurred grayscale image.
-            # dithered_img = ordered_dither(img_gray, BAYER_MATRIX)
-            img_gray.save(output_filename)
+            dithered_img = ordered_dither(img_gray, BAYER_MATRIX)
+            dithered_img.save(output_filename)
         os.remove(temp_filename)
 
-        print(f"Frame styled and saved as '{output_filename}'")
-        print("--- Python Script End ---")
+        logging.info(f"Frame styled and saved as '{output_filename}'")
         return True
 
     except subprocess.TimeoutExpired as e:
-        print(f"Fatal Error: A command timed out after 30 seconds.")
-        print(f"Command was: {' '.join(e.cmd)}")
+        logging.error(
+            f"A command timed out after {e.timeout} seconds: {' '.join(e.cmd)}"
+        )
         return False
     except FileNotFoundError as e:
-        print(f"Error: Binary not found - {e.filename}")
+        logging.error(f"Binary not found: {e.filename}")
         return False
     except subprocess.CalledProcessError as e:
-        print(f"Error executing a binary command: {' '.join(e.cmd)}")
-        print(f"Stderr: {e.stderr}")
+        logging.error(f"Error executing command: {' '.join(e.cmd)}")
+        logging.error(f"Stderr: {e.stderr.strip()}")
         return False
     except Exception as e:
-        print(f"An unexpected error occurred in get_frame: {e}")
+        logging.critical(f"An unexpected error occurred: {e}")
         return False
 
 
 def get_config():
-    """Safely reads config.json and prints values for the shell script."""
+    """Safely reads and parses config.json."""
     try:
         with open("config.json", "r") as f:
             config = json.load(f)
         video_id = config["youtube_video_id"]
         refresh = config["refresh_rate_seconds"]
-        ssid = config["wifi_ssid"]
-        psk = config["wifi_psk"]
-        enable_wifi = config.get("enable_wifi", False)
-        safe_mode = config.get("safe_mode", False)
-        print(f"{video_id} {refresh} {ssid} {psk} {enable_wifi} {safe_mode}")
+        print(f"{video_id} {refresh}")
         return True
-    except Exception as e:
-        print(f"Fatal Error reading config.json: {e}", file=sys.stderr)
+    except FileNotFoundError:
+        logging.error("Fatal: config.json not found.")
+        return False
+    except json.JSONDecodeError:
+        logging.error("Fatal: config.json is not valid JSON.")
+        return False
+    except KeyError as e:
+        logging.error(f"Fatal: Missing key in config.json: {e}")
         return False
 
 
@@ -157,7 +160,7 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         print(
-            "Usage: python3 get_youtube_frame.py [get-config|get-frame <video_id>]",
+            "Usage: python3 get_namib.py [get-config|get-frame <video_id>]",
             file=sys.stderr,
         )
         sys.exit(1)
