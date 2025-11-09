@@ -138,7 +138,8 @@ def get_config():
             config = json.load(f)
         video_id = config["youtube_video_id"]
         refresh = config["refresh_rate_seconds"]
-        print(f"{video_id} {refresh}")
+        enable_wifi = config.get("enable_wifi", True)
+        print(f"{video_id} {refresh} {enable_wifi}")
         return True
     except FileNotFoundError:
         logging.error("Fatal: config.json not found.")
